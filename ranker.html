@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>List Ranker</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 650px;
+    margin: 40px auto;
+    padding: 0 20px;
+    background: #f7f7f9;
+    color: #222;
+  }
+  h1 { text-align: center; }
+  textarea {
+    width: 100%;
+    height: 180px;
+    box-sizing: border-box;
+    padding: 12px;
+    font: inherit;
+  }
+  button {
+    padding: 14px 20px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background: white;
+    cursor: pointer;
+    font: inherit;
+  }
+  button:hover { background: #e8e8ff; }
+  .primary { background: #dfe4ff; }
+  .choices {
+    display: flex;
+    gap: 16px;
+    margin: 25px 0;
+  }
+  .choices button {
+    flex: 1;
+    min-height: 110px;
+    font-size: 1.1em;
+    font-weight: bold;
+    overflow-wrap: anywhere;
+  }
+  .panel {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    margin-top: 20px;
+  }
+  .hidden { display: none; }
+  .muted { color: #666; }
+  li { margin: 9px 0; }
+  progress { width: 100%; height: 16px; }
+</style>
+</head>
+<body>
+
+<h1>🏆 List Ranker</h1>
+
+<section id="setup" class="panel">
+  <h2>Enter your items</h2>
+  <p>One item per line:</p>
+<textarea id="items">The Legend of Zelda
+Zelda II: The Adventure of Link
+A Link to the Past
+Link's Awakening
+Ocarina of Time
+Majora's Mask
+The Wind Waker
+The Minish Cap
+Twilight Princess
+Skyward Sword
+A Link Between Worlds
+Breath of the Wild
+Tears of the Kingdom
+Echoes of Wisdom</textarea> 
+<p><button class="primary" onclick="start()">Start ranking</button></p>
+</section>
+
+<section id="ranking" class="panel hidden">
+  <p id="progressText" class="muted"></p>
+  <progress id="progressBar" value="0" max="100"></progress>
+
+  <h2>Which should rank higher?</h2>
+
+  <div class="choices">
+    <button id="choiceA" onclick="choose(true)"></button>
+    <button id="choiceB" onclick="choose(false)"></button>
+  </div>
+
+  <button onclick="undo()">↶ Undo</button>
+
+  <h3>Ranking so far</h3>
+  <ol id="partialList"></ol>
+</section>
+
+<section id="finished" class="panel hidden">
+  <h2>🎉 Final ranking</h2>
+  <p id="totalComparisons" class="muted"></p>
+  <ol id="finalList"></ol>
+  <button class="primary" onclick="copyResults()">Copy ranking</button>
+  <button onclick="reset()">Start again</button>
+</section>
+
+<script>
+let items = [];
+let ranked = [];
+let index = 0;
+let lo = 0;
+let hi = 0;
+let mid = 0;
+let comparisons = 0;
+let history = [];
+
+function show(section) {
+  for (const id of ["setup", "ranking", "finished"]) {
+    document.getElementById(id).classList.toggle(
+      "hidden", id !== section
+    );
+  }
+}
+
+function start() {
+  items = [...new Set(
+    document.getElementById("items").value
+      .split("\n")
+      .map(s => s.trim())
+      .filter(Boolean)
+  )];
+
+  if (items.length < 2) {
+    alert("Please enter at least two items.");
+    return;
+  }
+
+  ranked = [items[0]];
+  index = 1;
+  comparisons = 0;
+  history = [];
+  beginInsertion();
+}
+
+function beginInsertion() {
+  if (index >= items.length) {
+    finish();
+    return;
+  }
+
+  lo = 0;
+  hi = ranked.length;
+  showComparison();
+}
+
+function showComparison() {
+  // Binary search has found the insertion position
+  if (lo >= hi) {
+    ranked.splice(lo, 0, items[index]);
+    index++;
+    beginInsertion();
+    return;
+  }
+
+  mid = Math.floor((lo + hi) / 2);
+
+  document.getElementById("choiceA").textContent = items[index];
+  document.getElementById("choiceB").textContent = ranked[mid];
+
+  document.getElementById("progressText").textContent =
+    `${index} of ${items.length} items placed · ` +
+    `${comparisons} comparisons`;
+
+  document.getElementById("progressBar").value =
+    100 * index / items.length;
+
+  renderList("partialList");
+  show("ranking");
+}
+
+function choose(aHigher) {
+  // Save state so the last comparison can be undone
+  history.push({
+    ranked: [...ranked],
+    index, lo, hi, comparisons
+  });
+
+  comparisons++;
+
+  if (aHigher) {
+    // New item ranks above the middle item
+    hi = mid;
+  } else {
+    // New item ranks below the middle item
+    lo = mid + 1;
+  }
+
+  showComparison();
+}
+
+function undo() {
+  if (!history.length) return;
+
+  const previous = history.pop();
+  ranked = previous.ranked;
+  index = previous.index;
+  lo = previous.lo;
+  hi = previous.hi;
+  comparisons = previous.comparisons;
+
+  showComparison();
+}
+
+function renderList(elementId) {
+  const list = document.getElementById(elementId);
+  list.replaceChildren();
+
+  for (const item of ranked) {
+    const li = document.createElement("li");
+    li.textContent = item;
+    list.appendChild(li);
+  }
+}
+
+function finish() {
+  renderList("finalList");
+  document.getElementById("totalComparisons").textContent =
+    `Ranked ${items.length} items in ${comparisons} comparisons.`;
+  show("finished");
+}
+
+function copyResults() {
+  const text = ranked
+    .map((item, i) => `${i + 1}. ${item}`)
+    .join("\n");
+
+  navigator.clipboard.writeText(text)
+    .then(() => alert("Ranking copied!"))
+    .catch(() => prompt("Copy your ranking:", text));
+}
+
+function reset() {
+  show("setup");
+}
+</script>
+</body>
+</html>
